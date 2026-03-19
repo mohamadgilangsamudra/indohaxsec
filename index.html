@@ -351,6 +351,118 @@
     }
     .blog-modal-content::-webkit-scrollbar { width: 4px; }
     .blog-modal-content::-webkit-scrollbar-thumb { background: #00FF41; }
+
+    /* ===== MUSIC PLAYER ===== */
+    .music-player {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      z-index: 90;
+      background: rgba(5,5,5,0.95);
+      border: 1px solid rgba(0,255,65,0.3);
+      border-radius: 4px;
+      padding: 10px 14px;
+      font-family: 'VT323', monospace;
+      backdrop-filter: blur(10px);
+      transition: all 0.3s;
+      max-width: 280px;
+    }
+    .music-player:hover {
+      border-color: rgba(0,255,65,0.6);
+      box-shadow: 0 0 20px rgba(0,255,65,0.15);
+    }
+    .music-player .mp-title {
+      color: #00FF41;
+      font-size: 13px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 180px;
+    }
+    .music-player .mp-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 6px;
+    }
+    .music-player .mp-btn {
+      background: none;
+      border: 1px solid rgba(0,255,65,0.3);
+      color: #00FF41;
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 14px;
+      border-radius: 2px;
+      transition: all 0.2s;
+      padding: 0;
+    }
+    .music-player .mp-btn:hover {
+      background: rgba(0,255,65,0.15);
+      border-color: #00FF41;
+    }
+    .music-player .mp-volume {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 60px;
+      height: 3px;
+      background: rgba(0,255,65,0.2);
+      outline: none;
+      border-radius: 2px;
+    }
+    .music-player .mp-volume::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 10px;
+      height: 10px;
+      background: #00FF41;
+      border-radius: 50%;
+      cursor: pointer;
+    }
+    .music-player .mp-volume::-moz-range-thumb {
+      width: 10px;
+      height: 10px;
+      background: #00FF41;
+      border-radius: 50%;
+      cursor: pointer;
+      border: none;
+    }
+    .music-player .mp-eq {
+      display: flex;
+      align-items: flex-end;
+      gap: 2px;
+      height: 14px;
+    }
+    .music-player .mp-eq span {
+      display: block;
+      width: 3px;
+      background: #00FF41;
+      border-radius: 1px;
+    }
+    .music-player .mp-eq.playing span {
+      animation: eq-bar 0.6s ease-in-out infinite alternate;
+    }
+    .music-player .mp-eq.playing span:nth-child(1) { animation-delay: 0s; }
+    .music-player .mp-eq.playing span:nth-child(2) { animation-delay: 0.15s; }
+    .music-player .mp-eq.playing span:nth-child(3) { animation-delay: 0.3s; }
+    .music-player .mp-eq.playing span:nth-child(4) { animation-delay: 0.1s; }
+    .music-player .mp-eq.playing span:nth-child(5) { animation-delay: 0.25s; }
+    @keyframes eq-bar {
+      0% { height: 3px; }
+      100% { height: 14px; }
+    }
+
+    /* Mobile autoplay overlay */
+    .music-unlock-overlay {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      z-index: 9995;
+      cursor: pointer;
+    }
   </style>
 </head>
 <body class="scanlines crt-noise">
@@ -957,6 +1069,162 @@
     document.addEventListener('keydown', function(e) {
       if (e.key === 'Escape') closeBlog();
     });
+  </script>
+
+  <!-- ==================== MUSIC PLAYER ==================== -->
+  <div class="music-player" id="music-player">
+    <div style="display:flex; align-items:center; gap:8px;">
+      <div class="mp-eq" id="mp-eq">
+        <span style="height:4px"></span>
+        <span style="height:8px"></span>
+        <span style="height:6px"></span>
+        <span style="height:10px"></span>
+        <span style="height:5px"></span>
+      </div>
+      <div class="mp-title" id="mp-title">[ LOADING... ]</div>
+    </div>
+    <div class="mp-controls">
+      <button class="mp-btn" id="mp-prev" title="Previous">&#9664;</button>
+      <button class="mp-btn" id="mp-play" title="Play/Pause">&#9654;</button>
+      <button class="mp-btn" id="mp-next" title="Next">&#9654;&#9654;</button>
+      <input type="range" class="mp-volume" id="mp-volume" min="0" max="100" value="40" title="Volume">
+    </div>
+  </div>
+
+  <!-- Invisible overlay to capture first user interaction on mobile -->
+  <div class="music-unlock-overlay" id="music-unlock-overlay"></div>
+
+  <script>
+    // Background Music Player with mobile autoplay bypass
+    (function() {
+      var playlist = [
+        { src: '/music/track1.mp3', name: 'Hackers - Join The Cyberwar' },
+        { src: '/music/track2.mp3', name: 'Root Access 1' },
+        { src: '/music/track3.mp3', name: 'Root Access 2' }
+      ];
+
+      var currentTrack = 0;
+      var audio = new Audio();
+      audio.volume = 0.4;
+      audio.preload = 'auto';
+
+      var titleEl = document.getElementById('mp-title');
+      var playBtn = document.getElementById('mp-play');
+      var prevBtn = document.getElementById('mp-prev');
+      var nextBtn = document.getElementById('mp-next');
+      var volumeEl = document.getElementById('mp-volume');
+      var eqEl = document.getElementById('mp-eq');
+      var overlay = document.getElementById('music-unlock-overlay');
+
+      var isPlaying = false;
+      var userInteracted = false;
+
+      function loadTrack(index) {
+        currentTrack = index;
+        audio.src = playlist[currentTrack].src;
+        titleEl.textContent = '♪ ' + playlist[currentTrack].name;
+      }
+
+      function playAudio() {
+        var p = audio.play();
+        if (p && typeof p.then === 'function') {
+          p.then(function() {
+            isPlaying = true;
+            playBtn.innerHTML = '&#9646;&#9646;';
+            eqEl.classList.add('playing');
+          }).catch(function() {
+            // Autoplay blocked - will retry on user interaction
+            isPlaying = false;
+          });
+        }
+      }
+
+      function pauseAudio() {
+        audio.pause();
+        isPlaying = false;
+        playBtn.innerHTML = '&#9654;';
+        eqEl.classList.remove('playing');
+      }
+
+      function nextTrack() {
+        currentTrack = (currentTrack + 1) % playlist.length;
+        loadTrack(currentTrack);
+        playAudio();
+      }
+
+      function prevTrack() {
+        currentTrack = (currentTrack - 1 + playlist.length) % playlist.length;
+        loadTrack(currentTrack);
+        playAudio();
+      }
+
+      // When track ends, play next (loop playlist)
+      audio.addEventListener('ended', nextTrack);
+
+      // Controls
+      playBtn.addEventListener('click', function() {
+        if (isPlaying) { pauseAudio(); } else { playAudio(); }
+      });
+      nextBtn.addEventListener('click', nextTrack);
+      prevBtn.addEventListener('click', prevTrack);
+      volumeEl.addEventListener('input', function() {
+        audio.volume = this.value / 100;
+      });
+
+      // === MOBILE AUTOPLAY BYPASS ===
+      // Strategy: Capture ANY user interaction (touch, click, scroll, keydown)
+      // to unlock AudioContext and start playback.
+      // The invisible overlay captures the very first tap on mobile.
+
+      function unlockAndPlay() {
+        if (userInteracted) return;
+        userInteracted = true;
+
+        // Remove the overlay
+        if (overlay && overlay.parentNode) {
+          overlay.parentNode.removeChild(overlay);
+        }
+
+        // Resume AudioContext if suspended (Chrome mobile requirement)
+        if (window.AudioContext || window.webkitAudioContext) {
+          var ctx = new (window.AudioContext || window.webkitAudioContext)();
+          if (ctx.state === 'suspended') {
+            ctx.resume();
+          }
+        }
+
+        // Start playback
+        if (!isPlaying) {
+          playAudio();
+        }
+
+        // Remove all unlock listeners
+        document.removeEventListener('click', unlockAndPlay, true);
+        document.removeEventListener('touchstart', unlockAndPlay, true);
+        document.removeEventListener('touchend', unlockAndPlay, true);
+        document.removeEventListener('keydown', unlockAndPlay, true);
+        document.removeEventListener('scroll', unlockAndPlay, true);
+      }
+
+      // Listen on multiple events to catch the FIRST user interaction
+      document.addEventListener('click', unlockAndPlay, true);
+      document.addEventListener('touchstart', unlockAndPlay, true);
+      document.addEventListener('touchend', unlockAndPlay, true);
+      document.addEventListener('keydown', unlockAndPlay, true);
+      document.addEventListener('scroll', unlockAndPlay, true);
+
+      // Also try the overlay click
+      if (overlay) {
+        overlay.addEventListener('click', unlockAndPlay);
+        overlay.addEventListener('touchstart', unlockAndPlay);
+      }
+
+      // Load first track
+      loadTrack(0);
+
+      // Try autoplay immediately (works on desktop)
+      playAudio();
+    })();
   </script>
 </body>
 </html>
